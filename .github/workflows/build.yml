@@ -1,0 +1,95 @@
+name: Build
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+
+# Serialize main builds as well as publication so GitVersion sees the previous release tag.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: 10.0.x
+      - run: dotnet restore SyntaxCircus.Blazor.IndexNow.slnx
+      - run: dotnet build SyntaxCircus.Blazor.IndexNow.slnx --no-restore --configuration Release
+      - run: dotnet test --solution SyntaxCircus.Blazor.IndexNow.slnx --no-build --configuration Release
+      - run: dotnet pack SyntaxCircus.Blazor.IndexNow.slnx --no-build --configuration Release --output artifacts
+      - uses: actions/upload-artifact@v4
+        with:
+          name: nuget-package
+          path: artifacts/*.*nupkg
+          if-no-files-found: error
+          retention-days: 7
+
+  publish:
+    needs: build
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    runs-on: ubuntu-latest
+    environment: release
+    permissions:
+      contents: write
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: 10.0.x
+      - name: Download tested package
+        uses: actions/download-artifact@v8
+        with:
+          name: nuget-package
+          path: artifacts
+      - name: Determine published version
+        id: package
+        shell: bash
+        run: |
+          shopt -s nullglob
+          packages=(artifacts/SyntaxCircus.Blazor.IndexNow.*.nupkg)
+          if [ "${#packages[@]}" -ne 1 ]; then
+            echo "::error::Expected exactly one SyntaxCircus.Blazor.IndexNow NuGet package."
+            exit 1
+          fi
+          filename=$(basename "${packages[0]}")
+          version=${filename#SyntaxCircus.Blazor.IndexNow.}
+          version=${version%.nupkg}
+          echo "tag=v$version" >> "$GITHUB_OUTPUT"
+      - name: NuGet login (OIDC)
+        uses: NuGet/login@v1
+        id: login
+        with:
+          user: ${{ secrets.NUGET_USER }}
+      - name: Publish to NuGet
+        env:
+          NUGET_API_KEY: ${{ steps.login.outputs.NUGET_API_KEY }}
+        run: dotnet nuget push "artifacts/*.nupkg" --api-key "$NUGET_API_KEY" --source https://api.nuget.org/v3/index.json --skip-duplicate
+      - name: Tag published version
+        env:
+          RELEASE_TAG: ${{ steps.package.outputs.tag }}
+        shell: bash
+        run: |
+          if git show-ref --verify --quiet "refs/tags/$RELEASE_TAG"; then
+            if [ "$(git rev-list -n 1 "$RELEASE_TAG")" != "$GITHUB_SHA" ]; then
+              echo "::error::Release tag already points to a different commit."
+              exit 1
+            fi
+            echo "Tag $RELEASE_TAG already exists on this commit."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag "$RELEASE_TAG" "$GITHUB_SHA"
+          git push origin "$RELEASE_TAG"
