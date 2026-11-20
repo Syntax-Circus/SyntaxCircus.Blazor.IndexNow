@@ -1,5 +1,9 @@
 # SyntaxCircus.Blazor.IndexNow
 
+[![Build](https://github.com/Syntax-Circus/SyntaxCircus.Blazor.IndexNow/actions/workflows/build.yml/badge.svg)](https://github.com/Syntax-Circus/SyntaxCircus.Blazor.IndexNow/actions/workflows/build.yml)
+[![NuGet](https://img.shields.io/nuget/v/SyntaxCircus.Blazor.IndexNow.svg)](https://www.nuget.org/packages/SyntaxCircus.Blazor.IndexNow)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+
 Bootstrap-based Blazor admin components for managing [IndexNow](https://www.indexnow.org/) submissions: settings, ownership key file, sitemap preview with paged selection, manual submit, submission history with per-batch details, and retry.
 
 The package contains only the UI and the client contract. Your application implements `IIndexNowAdminClient` against its own admin API (typically backed by `SyntaxCircus.AspNetCore.IndexNow`).
